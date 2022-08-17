@@ -1,63 +1,50 @@
-// testcolors demo for Adafruit RGBmatrixPanel library.
-// Renders 512 colors on our 16x32 RGB LED matrix:
-// http://www.adafruit.com/products/420
-// Library supports 4096 colors, but there aren't that many pixels!  :)
-
-// Written by Limor Fried/Ladyada & Phil Burgess/PaintYourDragon
-// for Adafruit Industries.
-// BSD license, all text above must be included in any redistribution.
-
 #include <RGBmatrixPanel.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
 
-// Most of the signal pins are configurable, but the CLK pin has some
-// special constraints.  On 8-bit AVR boards it must be on PORTB...
-// Pin 8 works on the Arduino Uno & compatibles (e.g. Adafruit Metro),
-// Pin 11 works on the Arduino Mega.  On 32-bit SAMD boards it must be
-// on the same PORT as the RGB data pins (D2-D7)...
-// Pin 8 works on the Adafruit Metro M0 or Arduino Zero,
-// Pin A4 works on the Adafruit Metro M4 (if using the Adafruit RGB
-// Matrix Shield, cut trace between CLK pads and run a wire to A4).
 
-#define CLK  8   // USE THIS ON ARDUINO UNO, ADAFRUIT METRO M0, etc.
-//#define CLK A4 // USE THIS ON METRO M4 (not M0)
-//#define CLK 11 // USE THIS ON ARDUINO MEGA
-/*
-#define OE   9
-#define LAT 10
-#define A   A0
-#define B   A1
-#define C   A2
-*/
+#define CLK  8  
 #define OE   9
 #define LAT 10
 #define A   A1
 #define B   A0
 #define C   A2
 
-#define BUTTON_ONE   11
-#define BUTTON_TWO   12
-#define BUTTON_THREE 13
+#define B_MODE  11
+#define B_TASK1 12
+#define B_TASK2 13
 
 const uint8_t xCount = 32;
 const uint8_t yCount = 16;
 
+
 unsigned long gameboard[yCount];
 unsigned long oldGameboard[yCount];
+
+//TODO: Turn this into a 2D array. It is late and I don't want to deal with this.
 unsigned long oldGameboard2[yCount];
 unsigned long oldGameboard3[yCount];
+unsigned long oldGameboard4[yCount];
+unsigned long oldGameboard5[yCount];
 
+unsigned int habitBoard[yCount/2];
+
+int bModeState;
+int btask1State;
+int btask2State;
+bool isGameBoard;
+int habitIndex = 0;
 
 RGBmatrixPanel matrix(A, B, C, CLK, LAT, OE, false);
 
-
+// Gets the value at an x and y position.
 bool getBoardValue(unsigned long *board, int x, int y){
   unsigned long index = ((unsigned long)1 << x);
   return (board[y] & index) ? 1 : 0;
 }
 
+// Sets the value at an x and y position.
 void setBoardValue(unsigned long *board, int x, int y, bool value){
   if(value == 0){
     board[y] = (board[y] & (~((unsigned long)1 << x)));
@@ -67,7 +54,22 @@ void setBoardValue(unsigned long *board, int x, int y, bool value){
 }
 
 
-void printBoard(){
+bool getHabitBoardValue(int x, int y){
+  unsigned int index = ((unsigned int)1 << x);
+  return (habitBoard[y] & index) ? 1 : 0;
+}
+
+
+void setHabitBoardValue(int x, int y, bool value){
+  if(value == 0){
+    habitBoard[y] = (habitBoard[y] & (~((unsigned long)1 << x)));
+  }else if(value == 1){
+    habitBoard[y] = (habitBoard[y] | ((unsigned long)1 << x));
+  }
+}
+
+
+void printGOLBoard(){
   for(uint8_t y=0; y<16; y++) {
     for(uint8_t x=0; x<32; x++) {
       if(getBoardValue(gameboard, x, y)){
@@ -78,6 +80,7 @@ void printBoard(){
     }
   }
 }
+
 
 uint8_t countNeighbours(uint8_t x, uint8_t y){
   uint8_t numNeigh = 0;
@@ -97,14 +100,13 @@ uint8_t countNeighbours(uint8_t x, uint8_t y){
   return numNeigh;
 }
 void calculateNextBoard(){
-  //Serial.print("Calculating next board\n");
-  //time_t t;
-  //srand((unsigned) time(&t));
   int numNeigh;
   for(uint8_t y=0;y<16;y++){
     oldGameboard[y] = gameboard[y];
-    oldGameboard2[y] = gameboard[y];
-    oldGameboard3[y] = gameboard[y];
+    oldGameboard2[y] = oldGameboard[y];
+    oldGameboard3[y] = oldGameboard2[y];
+    oldGameboard4[y] = oldGameboard3[y];
+    oldGameboard5[y] = oldGameboard4[y];
   } 
   
   for(uint8_t y=0; y<16; y++){
@@ -118,20 +120,41 @@ void calculateNextBoard(){
         setBoardValue(gameboard, x, y, false);
       }else if(not getBoardValue(oldGameboard, x, y) && numNeigh == 3){
         setBoardValue(gameboard, x, y, true);
-      }else{
-        //Serial.print("ERROR");
-      }
+      } 
     }
     //Serial.print("Done Calculating neighbours oldGameboard\n");
   }
   
 }
 
-//Print boards is not working correctly for some reason
-void setup() {
-  Serial.begin(9600);
-  matrix.begin();
-  randomSeed(analogRead(0));
+bool checkGOLBoard(){
+  bool duplicateBoard;
+  unsigned long *oldBoards[5] = {
+    oldGameboard,
+    oldGameboard2,
+    oldGameboard3,
+    oldGameboard4,
+    oldGameboard5,
+  };
+
+  for(uint8_t x=0; x<5;x++){
+    unsigned long *oldBoard = oldBoards[x];
+    duplicateBoard = true;
+    for(uint8_t y=0; y<16;y++){
+      if (gameboard[y] != oldBoard[y]){
+        duplicateBoard = false;
+        break;
+      } 
+    }
+    if(duplicateBoard){
+      break;
+    } 
+  }
+  return duplicateBoard;
+}
+
+void randomizeGameBoard(){
+  randomSeed(analogRead(5));
   for(uint8_t y = 0; y<16; y++){
     for(int x = 0; x < 32; x++){
       if (random(101) <= 40){
@@ -140,11 +163,119 @@ void setup() {
         setBoardValue(gameboard,x,y,false);
       }
     }
+
+    if (y % 2 == 0){
+      habitBoard[y/2] = 0;
+    }
   }
 }
 
+
+void resetGOL(){
+  randomizeGameBoard();
+  for(uint8_t y = 0; y<16; y++){
+    oldGameboard[y] = 0;
+    oldGameboard2[y] = 0;
+    oldGameboard3[y] = 0;
+    oldGameboard4[y] = 0;
+    oldGameboard5[y] = 0; 
+  }
+}
+
+void printHabitBoard(){
+ for(uint8_t y=0; y<8; y++) {
+  for(uint8_t x=0; x<16; x++) {
+    int trueX = x * 2;
+    int trueY = y * 2;
+    if(getHabitBoardValue(x, y)){
+      matrix.drawPixel(trueX, trueY, matrix.Color333(155, 155, 155));
+      matrix.drawPixel(trueX + 1, trueY, matrix.Color333(155, 155, 155)); 
+      matrix.drawPixel(trueX, trueY + 1, matrix.Color333(155, 155, 155)); 
+      matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(155, 155, 155));
+    }else{
+      matrix.drawPixel(trueX, trueY, matrix.Color333(0, 0, 0));
+      matrix.drawPixel(trueX + 1, trueY, matrix.Color333(0, 0, 0)); 
+      matrix.drawPixel(trueX, trueY + 1, matrix.Color333(0, 0, 0)); 
+      matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(0, 0, 0));
+    }
+  }
+ }  
+}
+
+void handleButtons(){
+  bool modeChange = false;
+  bool task1Change = false;
+  bool task2Change = false;
+  int stateModeButton = digitalRead(B_MODE);
+  int stateTask1Button = digitalRead(B_TASK1);
+  int stateTask2Button = digitalRead(B_TASK2);
+
+  if (stateModeButton != bModeState){
+    bModeState = stateModeButton;
+    if(bModeState == LOW){
+      isGameBoard = !isGameBoard;
+      modeChange = true; 
+    }
+    delay(50);
+    return; // Exit because we don't want to read any other button.
+  } 
+
+  if (stateTask1Button != btask1State && !isGameBoard){
+    btask1State = stateTask1Button;
+    if(btask1State == LOW){
+      task1Change = true;
+    }
+  }
+
+  if (stateTask2Button != btask2State && !isGameBoard){
+    btask2State = stateTask2Button;
+    if(btask2State == LOW){
+      task2Change = true;
+    }
+  }
+
+  if(task1Change && task2Change){
+    // Run backspace command
+    int x =1; 
+  }else if (task1Change){
+     int x =1;   // Run mark day as complete function.
+  }else if (task2Change){
+     int x =1;// Make day as incomplete.
+  } 
+
+  if(task1Change || task2Change){
+    delay(50);
+  } 
+}
+//Print boards is not working correctly for some reason
+void setup() {
+  Serial.begin(9600);
+  matrix.begin(); 
+  isGameBoard = false;
+  pinMode(B_MODE, INPUT_PULLUP);
+  pinMode(B_TASK1, INPUT_PULLUP);
+  pinMode(B_TASK2, INPUT_PULLUP);
+
+  bModeState = digitalRead(B_MODE);
+  btask1State = digitalRead(B_TASK1);
+  btask2State = digitalRead(B_TASK2);
+}
+
 void loop() {
-  printBoard();
-  calculateNextBoard();
-  delay(750);
+  //TODO: Add a stanby mode where nothing is displayed.
+  // Start in the task mode
+  // Use button presses to switch between the modes.
+  handleButtons();
+  
+  if(isGameBoard){
+    bool isFinished = checkGOLBoard();
+    if(isFinished){
+      resetGOL();
+    }
+    printGOLBoard();
+    calculateNextBoard();
+    delay(50);
+  }else{
+    printHabitBoard();
+  }
 }
