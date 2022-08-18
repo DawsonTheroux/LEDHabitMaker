@@ -14,6 +14,7 @@
 #define B_MODE  11
 #define B_TASK1 12
 #define B_TASK2 13
+#define B_TASK3 1
 
 const uint8_t xCount = 32;
 const uint8_t yCount = 16;
@@ -33,8 +34,9 @@ unsigned int habitBoard[yCount/2];
 int bModeState;
 int btask1State;
 int btask2State;
+int btask3State;
 bool isGameBoard;
-int habitIndex = 0;
+int habitIndex;
 
 RGBmatrixPanel matrix(A, B, C, CLK, LAT, OE, false);
 
@@ -62,9 +64,9 @@ bool getHabitBoardValue(int x, int y){
 
 void setHabitBoardValue(int x, int y, bool value){
   if(value == 0){
-    habitBoard[y] = (habitBoard[y] & (~((unsigned long)1 << x)));
+    habitBoard[y] = (habitBoard[y] & (~((unsigned int)1 << x)));
   }else if(value == 1){
-    habitBoard[y] = (habitBoard[y] | ((unsigned long)1 << x));
+    habitBoard[y] = (habitBoard[y] | ((unsigned int)1 << x));
   }
 }
 
@@ -102,11 +104,12 @@ uint8_t countNeighbours(uint8_t x, uint8_t y){
 void calculateNextBoard(){
   int numNeigh;
   for(uint8_t y=0;y<16;y++){
-    oldGameboard[y] = gameboard[y];
-    oldGameboard2[y] = oldGameboard[y];
-    oldGameboard3[y] = oldGameboard2[y];
-    oldGameboard4[y] = oldGameboard3[y];
+    
     oldGameboard5[y] = oldGameboard4[y];
+    oldGameboard4[y] = oldGameboard3[y];
+    oldGameboard3[y] = oldGameboard2[y];
+    oldGameboard2[y] = oldGameboard[y];
+    oldGameboard[y] = gameboard[y];
   } 
   
   for(uint8_t y=0; y<16; y++){
@@ -128,7 +131,7 @@ void calculateNextBoard(){
 }
 
 bool checkGOLBoard(){
-  bool duplicateBoard;
+  bool duplicateBoard = true;
   unsigned long *oldBoards[5] = {
     oldGameboard,
     oldGameboard2,
@@ -137,18 +140,20 @@ bool checkGOLBoard(){
     oldGameboard5,
   };
 
+     
+  // Check if the current gameboard looks like any of the past ones.
   for(uint8_t x=0; x<5;x++){
-    unsigned long *oldBoard = oldBoards[x];
+    //unsigned long oldBoard = oldBoards[x];
     duplicateBoard = true;
     for(uint8_t y=0; y<16;y++){
-      if (gameboard[y] != oldBoard[y]){
+      if (gameboard[y] != oldBoards[x][y]){
         duplicateBoard = false;
         break;
       } 
     }
     if(duplicateBoard){
       break;
-    } 
+    }
   }
   return duplicateBoard;
 }
@@ -162,10 +167,6 @@ void randomizeGameBoard(){
       }else{
         setBoardValue(gameboard,x,y,false);
       }
-    }
-
-    if (y % 2 == 0){
-      habitBoard[y/2] = 0;
     }
   }
 }
@@ -187,28 +188,63 @@ void printHabitBoard(){
   for(uint8_t x=0; x<16; x++) {
     int trueX = x * 2;
     int trueY = y * 2;
-    if(getHabitBoardValue(x, y)){
+    int indX = habitIndex % 16;
+    int indY = habitIndex / 16;
+
+    if((x > indX && y == indY) || y > indY){
+      matrix.drawPixel(trueX, trueY, matrix.Color333(0, 0, 0));
+      matrix.drawPixel(trueX + 1, trueY, matrix.Color333(0, 0, 0)); 
+      matrix.drawPixel(trueX, trueY + 1, matrix.Color333(0, 0, 0)); 
+      matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(0, 0, 0));
+    }else if(getHabitBoardValue(x, y)){
       matrix.drawPixel(trueX, trueY, matrix.Color333(155, 155, 155));
       matrix.drawPixel(trueX + 1, trueY, matrix.Color333(155, 155, 155)); 
       matrix.drawPixel(trueX, trueY + 1, matrix.Color333(155, 155, 155)); 
       matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(155, 155, 155));
     }else{
-      matrix.drawPixel(trueX, trueY, matrix.Color333(0, 0, 0));
-      matrix.drawPixel(trueX + 1, trueY, matrix.Color333(0, 0, 0)); 
-      matrix.drawPixel(trueX, trueY + 1, matrix.Color333(0, 0, 0)); 
-      matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(0, 0, 0));
+      matrix.drawPixel(trueX, trueY, matrix.Color333(155, 0, 0));
+      matrix.drawPixel(trueX + 1, trueY, matrix.Color333(155, 0, 0)); 
+      matrix.drawPixel(trueX, trueY + 1, matrix.Color333(155, 0, 0)); 
+      matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(155, 0, 0));
     }
   }
  }  
 }
 
+
+void taskComplete(){
+  //Set the space at the habitIndex to the completed value.
+ // This seems like a job for modulo. 
+  habitIndex += 1;
+  int habitX = habitIndex % 16;
+  int habitY = habitIndex / 16;
+  setHabitBoardValue(habitX, habitY, true);
+  return; 
+}
+
+void taskIncomplete(){
+  habitIndex += 1;
+  int habitX = habitIndex % 16;
+  int habitY = habitIndex / 16; 
+
+  // It is necessary to set the value because undo task could have left completed tasks ahead.
+  setHabitBoardValue(habitX, habitY, false);
+  return;
+}
+
+void undoTask(){
+  // Decrement the index counter.
+  habitIndex -=1;
+  return;
+
+}
+
 void handleButtons(){
   bool modeChange = false;
-  bool task1Change = false;
-  bool task2Change = false;
   int stateModeButton = digitalRead(B_MODE);
   int stateTask1Button = digitalRead(B_TASK1);
   int stateTask2Button = digitalRead(B_TASK2);
+  int stateTask3Button = digitalRead(B_TASK3);
 
   if (stateModeButton != bModeState){
     bModeState = stateModeButton;
@@ -223,29 +259,39 @@ void handleButtons(){
   if (stateTask1Button != btask1State && !isGameBoard){
     btask1State = stateTask1Button;
     if(btask1State == LOW){
-      task1Change = true;
+      modeChange = true;
+      taskComplete();
     }
   }
 
   if (stateTask2Button != btask2State && !isGameBoard){
     btask2State = stateTask2Button;
     if(btask2State == LOW){
-      task2Change = true;
+      modeChange = true;
+      taskIncomplete();
     }
   }
 
-  if(task1Change && task2Change){
-    // Run backspace command
-    int x =1; 
-  }else if (task1Change){
-     int x =1;   // Run mark day as complete function.
-  }else if (task2Change){
-     int x =1;// Make day as incomplete.
-  } 
+  if (stateTask3Button != btask3State && !isGameBoard){
+    btask3State = stateTask3Button;
+    if(btask3State == LOW){
+      modeChange = true;
+      undoTask();
+    }
+  }
 
-  if(task1Change || task2Change){
+  if(modeChange){
     delay(50);
   } 
+
+  return;
+}
+
+
+void initializeHabitBoards(){
+  for(uint8_t y=0; y<8; y++) {
+    habitBoard[y] = 0;
+  }   
 }
 //Print boards is not working correctly for some reason
 void setup() {
@@ -259,7 +305,11 @@ void setup() {
   bModeState = digitalRead(B_MODE);
   btask1State = digitalRead(B_TASK1);
   btask2State = digitalRead(B_TASK2);
+  btask3State = digitalRead(B_TASK3);
+  habitIndex = -1;
+  initializeHabitBoards();
 }
+
 
 void loop() {
   //TODO: Add a stanby mode where nothing is displayed.
@@ -274,8 +324,9 @@ void loop() {
     }
     printGOLBoard();
     calculateNextBoard();
-    delay(50);
+    //delay(50);
   }else{
     printHabitBoard();
+    delay(25);
   }
 }
