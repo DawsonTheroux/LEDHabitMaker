@@ -16,6 +16,11 @@
 #define B_TASK2 13
 #define B_TASK3 1
 
+#define PR A3       // Photo Resister pin.
+
+const float MAX_BRIGHTNESS = 0.3; // Max brightness percentage;
+const float MIN_BRIGHTNESS = 0.1; // Mine brightness percentage;
+
 const uint8_t xCount = 32;
 const uint8_t yCount = 16;
 
@@ -37,6 +42,9 @@ int btask2State;
 int btask3State;
 bool isGameBoard;
 int habitIndex;
+
+float boardBrightness;
+
 
 RGBmatrixPanel matrix(A, B, C, CLK, LAT, OE, false);
 
@@ -70,14 +78,26 @@ void setHabitBoardValue(int x, int y, bool value){
   }
 }
 
+void drawBoardPixel(uint8_t x, uint8_t y, String strColour){ 
+  uint16_t colour; 
+  if(strColour.equals("WHITE")){
+    colour = matrix.Color888(130 * boardBrightness, 255 * boardBrightness, 100 * boardBrightness);
+  }else if (strColour.equals("RED")){
+    colour = matrix.Color888(255,120,50);
+  }else{
+    colour = matrix.Color888(0,0,0);
+  }
+  matrix.drawPixel(x,y,colour);
+
+}
 
 void printGOLBoard(){
   for(uint8_t y=0; y<16; y++) {
     for(uint8_t x=0; x<32; x++) {
       if(getBoardValue(gameboard, x, y)){
-        matrix.drawPixel(x, y, matrix.Color333(155, 155, 155));
+        drawBoardPixel(x,y,"WHITE");
       }else{
-        matrix.drawPixel(x, y, matrix.Color333(0, 0, 0));
+        drawBoardPixel(x,y,"NONE");
       }
     }
   }
@@ -184,30 +204,21 @@ void resetGOL(){
 }
 
 void printHabitBoard(){
- for(uint8_t y=0; y<8; y++) {
-  for(uint8_t x=0; x<16; x++) {
-    int trueX = x * 2;
-    int trueY = y * 2;
-    int indX = habitIndex % 16;
-    int indY = habitIndex / 16;
-
-    if((x > indX && y == indY) || y > indY){
-      matrix.drawPixel(trueX, trueY, matrix.Color333(0, 0, 0));
-      matrix.drawPixel(trueX + 1, trueY, matrix.Color333(0, 0, 0)); 
-      matrix.drawPixel(trueX, trueY + 1, matrix.Color333(0, 0, 0)); 
-      matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(0, 0, 0));
-    }else if(getHabitBoardValue(x, y)){
-      matrix.drawPixel(trueX, trueY, matrix.Color333(155, 155, 155));
-      matrix.drawPixel(trueX + 1, trueY, matrix.Color333(155, 155, 155)); 
-      matrix.drawPixel(trueX, trueY + 1, matrix.Color333(155, 155, 155)); 
-      matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(155, 155, 155));
-    }else{
-      matrix.drawPixel(trueX, trueY, matrix.Color333(155, 0, 0));
-      matrix.drawPixel(trueX + 1, trueY, matrix.Color333(155, 0, 0)); 
-      matrix.drawPixel(trueX, trueY + 1, matrix.Color333(155, 0, 0)); 
-      matrix.drawPixel(trueX + 1, trueY + 1, matrix.Color333(155, 0, 0));
-    }
-  }
+  int indX = habitIndex % 16;
+  int indY = habitIndex / 16;
+      
+  for(uint8_t y=0; y<yCount; y++){
+    for(uint8_t x=0; x<32; x++){
+      int trueX = x / 2;
+      int trueY = y / 2;
+      if((trueX > indX) && (trueY == indY) || (trueY > indY)){
+        drawBoardPixel(x, y, "NONE");
+      }else if(getHabitBoardValue(trueX, trueY)){
+        drawBoardPixel(x, y, "WHITE");
+      }else{
+        drawBoardPixel(x, y, "RED");
+      } 
+    } 
  }  
 }
 
@@ -293,6 +304,22 @@ void initializeHabitBoards(){
     habitBoard[y] = 0;
   }   
 }
+
+void setBoardBrightness(){
+  // The photo resister will output a value between 0 and 1000.
+  short photoResist = analogRead(PR); // PR max value around 1000, lowest 200.
+  float newBoardBrightness = float(photoResist) / 1000;
+  if(abs(newBoardBrightness - boardBrightness) > 0.1){
+    boardBrightness = newBoardBrightness;
+  }
+  
+  if(boardBrightness > MAX_BRIGHTNESS){
+    boardBrightness  = MAX_BRIGHTNESS;
+  }else if(boardBrightness < MIN_BRIGHTNESS){
+    boardBrightness = MIN_BRIGHTNESS;
+  }
+  boardBrightness = 0.25;
+}
 //Print boards is not working correctly for some reason
 void setup() {
   Serial.begin(9600);
@@ -308,6 +335,8 @@ void setup() {
   btask3State = digitalRead(B_TASK3);
   habitIndex = -1;
   initializeHabitBoards();
+  boardBrightness = 1;
+
 }
 
 
@@ -315,8 +344,9 @@ void loop() {
   //TODO: Add a stanby mode where nothing is displayed.
   // Start in the task mode
   // Use button presses to switch between the modes.
+  setBoardBrightness();
   handleButtons();
-  
+ 
   if(isGameBoard){
     bool isFinished = checkGOLBoard();
     if(isFinished){
@@ -324,7 +354,7 @@ void loop() {
     }
     printGOLBoard();
     calculateNextBoard();
-    //delay(50);
+    delay(50);
   }else{
     printHabitBoard();
     delay(25);
